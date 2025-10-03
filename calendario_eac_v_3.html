@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Calendário de Compromissos — EAC</title>
+  <meta name="color-scheme" content="light" />
+  <style>
+    :root{
+      color-scheme: light;
+      --bg: #f6f7f8;
+      --surface: #ffffff;
+      --ink: #0f1115;     /* chumbo escuro */
+      --ink-2: #505560;
+      --muted: #9aa0a6;
+      --hairline: rgba(15,17,21,.08);
+      --shadow: 0 2px 16px rgba(0,0,0,.05);
+      --radius: 16px;
+      --accent: #0f1115;
+      /* prioridades (bem chamativas) */
+      --p-urgent: #D32F2F;   /* vermelho */
+      --p-medium: #FF7A00;   /* laranja vivo */
+      --p-low: #2E7D32;      /* verde */
+      /* toast */
+      --success: #2E7D32;
+      --danger: #D32F2F;
+    }
+
+    *{box-sizing: border-box;}
+    html{font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;}
+    body{margin:0; background:var(--bg); color:var(--ink); -webkit-font-smoothing: antialiased;}
+    
+    .wrap{max-width: 1100px; margin: 0 auto; padding: 24px 20px;}
+
+    /* Header */
+    header{display:flex; align-items:center; justify-content:space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 16px;}
+    .nav{display:flex; align-items:center; gap:12px;}
+    .title{font-size: clamp(28px, 4vw, 40px); font-weight: 700; margin:0; letter-spacing:-.5px;}
+    
+    .controls{display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end;}
+    .btn{
+      border:1px solid var(--hairline); background:var(--surface); color:var(--ink);
+      border-radius: 10px; padding: 9px 16px; font-size:14px; font-weight: 600;
+      box-shadow: var(--shadow); cursor: pointer; transition: .15s; font-family: inherit;
+    }
+    .btn:hover{background: #fafafa; transform: translateY(-1px);} 
+    .btn:active{transform: translateY(0);} 
+    .btn-icon{width:38px; height:38px; padding:0; display:flex; align-items:center; justify-content:center;}
+    .btn[disabled]{opacity:.3; pointer-events:none;}
+    select.btn{padding: 9px 14px; width: 180px; min-width: 180px;}
+
+    /* Calendar */
+    .cal{background: var(--surface); border:1px solid var(--hairline); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;}
+    .cal-header{display:grid; grid-template-columns: repeat(7, 1fr); gap: 6px; padding: 16px; border-bottom:1px solid var(--hairline); background: #fafbfc;}
+    .wd{font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing:.6px; color:var(--muted); text-align:center;}
+
+    .cal-grid{display:grid; grid-template-columns: repeat(7, 1fr); gap: 6px; padding: 16px;}
+    .day{
+      position:relative; background: #fff; border:1px solid var(--hairline); border-radius: 12px;
+      padding:10px; min-height: clamp(70px, 11vw, 110px); display:flex; flex-direction: column; justify-content: space-between;
+      cursor: pointer; transition: .12s; color: var(--ink);
+    }
+    .day:hover{transform: translateY(-2px); box-shadow: var(--shadow);} 
+    .day.other{background: #fafafa; color:#b0b0b0;}
+    .day.hidden{opacity: .18; pointer-events: none;}
+    .num{font-weight: 800; font-size: 16px; text-align: right;}
+
+    .day.today{outline: 2px solid #111; outline-offset: -2px;}
+
+    /* Destaque por prioridade: quadrado inteiro colorido */
+    .day.has-event{color:#fff; border-color: transparent;}
+    .day.has-event[data-priority="urgent"]{background: var(--p-urgent);}   
+    .day.has-event[data-priority="medium"]{background: var(--p-medium);} 
+    .day.has-event[data-priority="low"]{background: var(--p-low);} 
+    .day.has-event:hover{filter: brightness(.95);} 
+    .day.has-event.today{outline: 2px solid #fff;}
+
+    /* Contador de compromissos */
+    .count-badge{
+      position:absolute; top:8px; left:8px; background: rgba(255,255,255,.95); color: var(--ink);
+      font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 999px; box-shadow: 0 2px 8px rgba(0,0,0,.15);
+    }
+    .day.has-event .count-badge{ background: rgba(255,255,255,.22); color:#fff; backdrop-filter: blur(4px); }
+
+    /* Modal — limpo, com espaçamento correto */
+    dialog{border:0; padding:0; margin: auto; background: transparent; max-width: 760px; width: 94vw; border-radius: var(--radius); box-shadow: 0 20px 60px rgba(0,0,0,.15);} 
+    dialog::backdrop{background: rgba(0,0,0,.28);} 
+    .modal{background:var(--surface); color: var(--ink); border-radius: var(--radius); overflow: hidden;}
+    .modal-head{padding: 22px 24px; border-bottom:1px solid var(--hairline);} 
+    .modal-head h2{margin:0; font-size: 20px; font-weight: 800; letter-spacing:-.3px;}
+    .modal-head .date{margin:6px 0 0; font-size: 13px; color:var(--muted);} 
+    .modal-body{padding: 20px 24px; max-height: 62vh; overflow-y: auto;} 
+
+    /* Grade organizada (nada encostando/brigando) */
+    .form-grid{display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px;}
+    .full{grid-column: 1 / -1;}
+
+    .field{display:flex; flex-direction:column; gap:8px;}
+    .field label{font-size: 13px; font-weight: 700; color:var(--ink-2);} 
+    .input, .textarea, select{width:100%; border:1px solid var(--hairline); border-radius: 12px; padding: 12px 14px; font-size: 15px; font-family: inherit; background: #fff; color: var(--ink); -webkit-text-fill-color: var(--ink);} 
+    .input::placeholder, .textarea::placeholder{color: var(--muted);} 
+    .input:focus, .textarea:focus, select:focus{outline: none; border-color: var(--ink); box-shadow: 0 0 0 3px rgba(15,17,21,.06);} 
+    .textarea{resize: vertical; min-height: 96px;}
+
+    .modal-footer{padding: 16px 24px 22px; border-top:1px solid var(--hairline); display:flex; gap:10px; justify-content:flex-end;}
+    .btn-primary{background:#111; color:#fff; border-color: #111;}
+    .btn-primary:hover{background:#222;}
+
+    /* Pessoas (chips responsivos) */
+    .people{display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:10px;}
+    .person{position:relative;}
+    .person input{position:absolute; inset:0; opacity:0;}
+    .person label{display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:999px; border:1px solid var(--hairline); background:#fff; cursor:pointer; box-shadow: var(--shadow); transition: .12s;}
+    .person label:hover{background: #fafafa;}
+    .person input:checked + label{background:#111; color:#fff; border-color:#111;}
+
+    /* Lista de eventos / tags */
+    .list{display:flex; flex-direction:column; gap:12px;}
+    .event{border:1px solid var(--hairline); background:#fff; border-radius: 12px; padding:16px; display:flex; justify-content:space-between; align-items:flex-start; gap: 12px;}
+    .event-info{flex:1; min-width: 0;}
+    .event-title{font-weight:800; font-size:15px; margin-bottom: 6px;}
+    .event-meta{font-size:13px; color:var(--muted); margin-bottom: 8px;}
+    .tags{display:flex; flex-wrap:wrap; gap:6px;}
+    .pill{display:inline-flex; align-items:center; gap:6px; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:800; color:#fff;}
+    .pill.urgent{background: var(--p-urgent);} 
+    .pill.medium{background: var(--p-medium);} 
+    .pill.low{background: var(--p-low);} 
+    .tag{font-size:12px; padding:2px 8px; border-radius:999px; border:1px solid var(--hairline); background:#fff;}
+
+    /* Botões de ação nos eventos */
+    .event-actions{display:flex; gap:6px; flex-direction: column;}
+    .btn-edit, .btn-del{ padding: 6px 12px; font-size: 13px; border-radius: 8px; white-space: nowrap; }
+    .btn-edit{ background: #f0f0f0; border-color: var(--hairline); }
+    .btn-edit:hover{ background: #e0e0e0; }
+    .btn-del{ background: #fee; border-color: #fcc; color: #c00; }
+    .btn-del:hover{ background: #fdd; }
+
+    /* Export modal - texto limpo */
+    .export-content{ background:#fafafa; border:1px solid var(--hairline); border-radius:12px; padding:20px; font-family: 'SF Mono', Monaco, 'Courier New', monospace; font-size:13px; line-height:1.8; white-space: pre-wrap; max-height: 420px; overflow-y:auto; color:var(--ink); }
+    .export-options{ display:flex; gap:10px; margin-bottom:16px; }
+    .export-options .btn{ flex:1; }
+    .export-options .btn.active{ background:#111; color:#fff; }
+
+    /* Toast notification (nível alto) */
+    .toast{
+      position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%) translateY(100px);
+      padding: 14px 24px; border-radius: 12px; font-size: 14px; font-weight: 700; box-shadow: 0 8px 24px rgba(0,0,0,.3);
+      opacity: 0; transition: .3s; pointer-events: none; z-index: 9999; display:flex; align-items:center; gap:10px;
+    }
+    .toast.show{ opacity:1; transform: translateX(-50%) translateY(0); }
+    .toast.success{ background: var(--success); color:#fff; }
+    .toast.danger{ background: var(--danger); color:#fff; }
+    .toast-icon{ font-size:18px; }
+
+    /* FAB */
+    .fab{position: fixed; right: 24px; bottom: 24px; width:60px; height:60px; border-radius:50%; background:#111; color:#fff; border:0; font-size:28px; display:flex; align-items:center; justify-content:center; box-shadow: 0 8px 24px rgba(0,0,0,.2); cursor:pointer; transition: .2s;}
+    .fab:hover{transform: translateY(-3px); box-shadow: 0 12px 32px rgba(0,0,0,.25);} 
+    .fab:active{transform: translateY(0);} 
+
+    @media (max-width: 640px){
+      .day{min-height: 68px; padding: 8px;}
+      .controls{width: 100%;}
+      select.btn{flex: 1; width:auto; min-width:0;}
+      .modal-head, .modal-body, .modal-footer{padding-left: 16px; padding-right: 16px;}
+      .form-grid{grid-template-columns: 1fr;}
+      .event-actions{flex-direction: row;}
+      .export-options{flex-direction: column;}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="nav">
+        <button id="prevBtn" class="btn btn-icon" aria-label="Mês anterior">◀</button>
+        <h1 id="title" class="title">Mês Ano</h1>
+        <button id="nextBtn" class="btn btn-icon" aria-label="Próximo mês">▶</button>
+      </div>
+      <div class="controls">
+        <button id="todayBtn" class="btn">Hoje</button>
+        <select id="monthSelect" class="btn" aria-label="Selecionar mês"></select>
+        <select id="yearSelect" class="btn" aria-label="Selecionar ano"></select>
+        <select id="personFilter" class="btn" aria-label="Filtrar por pessoa"><option value="">Todas as pessoas</option></select>
+        <button id="exportBtn" class="btn">📄 Exportar</button>
+      </div>
+    </header>
+
+    <div class="cal" aria-label="Calendário mensal">
+      <div class="cal-header" id="weekHeader"></div>
+      <div class="cal-grid" id="grid"></div>
+    </div>
+  </div>
+
+  <!-- Modal: Novo/Editar compromisso -->
+  <dialog id="eventDialog">
+    <div class="modal" role="dialog" aria-labelledby="dlgTitle">
+      <div class="modal-head">
+        <h2 id="dlgTitle">Novo compromisso</h2>
+        <div class="date" id="dlgDate"></div>
+      </div>
+      <div class="modal-body">
+        <form id="eventForm" class="form-grid">
+          <input type="hidden" id="eventId" />
+          
+          <div class="field full">
+            <label for="titleInput">Título *</label>
+            <input id="titleInput" class="input" type="text" placeholder="Ex.: Reunião de equipe" required />
+          </div>
+
+          <div class="field">
+            <label for="dateInput">Data *</label>
+            <input id="dateInput" class="input" type="date" required />
+          </div>
+          <div class="field">
+            <label for="startInput">Início</label>
+            <input id="startInput" class="input" type="time" />
+          </div>
+          <div class="field">
+            <label for="endInput">Fim</label>
+            <input id="endInput" class="input" type="time" />
+          </div>
+          <div class="field">
+            <label for="prioritySelect">Prioridade</label>
+            <select id="prioritySelect" class="input">
+              <option value="urgent">Urgente (vermelho)</option>
+              <option value="medium" selected>Intermediária (laranja)</option>
+              <option value="low">Normal (verde)</option>
+            </select>
+          </div>
+
+          <div class="field full">
+            <label>Pessoas</label>
+            <div id="peopleContainer" class="people"></div>
+          </div>
+
+          <div class="field full">
+            <label for="noteInput">Notas</label>
+            <textarea id="noteInput" class="textarea" placeholder="Adicione detalhes (opcional)"></textarea>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button id="cancelBtn" class="btn" type="button">Cancelar</button>
+        <button id="saveBtn" class="btn btn-primary" type="button">Salvar</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Modal: Lista do dia -->
+  <dialog id="dayDialog">
+    <div class="modal" role="dialog" aria-labelledby="dayDate">
+      <div class="modal-head">
+        <h2>Compromissos</h2>
+        <div class="date" id="dayDate"></div>
+      </div>
+      <div class="modal-body">
+        <div id="dayList" class="list"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="dayCloseBtn" class="btn" type="button">Fechar</button>
+        <button id="dayAddBtn" class="btn btn-primary" type="button">Adicionar</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Modal: Exportar texto -->
+  <dialog id="exportDialog">
+    <div class="modal" role="dialog">
+      <div class="modal-head">
+        <h2>Exportar Compromissos</h2>
+      </div>
+      <div class="modal-body">
+        <div class="export-options">
+          <button id="exportWeekBtn" class="btn active">Semana Atual</button>
+          <button id="exportMonthBtn" class="btn">Mês Atual</button>
+        </div>
+        <div id="exportContent" class="export-content"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="exportCloseBtn" class="btn" type="button">Fechar</button>
+        <button id="copyExportBtn" class="btn btn-primary" type="button">📋 Copiar</button>
+      </div>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast">
+    <span class="toast-icon" id="toastIcon"></span>
+    <span id="toastMsg"></span>
+  </div>
+
+  <button class="fab" id="fabAdd" aria-label="Novo compromisso">+</button>
+
+  <!-- Firebase compat -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+
+  <script>
+  (function(){
+    'use strict';
+
+    const allowedYears = [2025, 2026, 2027];
+    const monthNames = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const weekDays = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+    // Pessoas — ordem alfabética ignorando Tio/Tia
+    const PEOPLE = [
+      'Tio Wagner', 'Tia Bárbara', 'Tia Isabel', 'Tio Christian',
+      'Malu', 'Matheus', 'Pedro', 'Ana Júlia'
+    ].sort((a,b)=> stripPrefix(a).localeCompare(stripPrefix(b),'pt-BR',{sensitivity:'base'}));
+    function stripPrefix(name){return name.replace(/^Tio\s+/i,'').replace(/^Tia\s+/i,'').trim();}
+
+    const state = { 
+      year: 2025, month: 0,
+      eventsByDate: {},
+      monthUnsub: null, selectedDate: null,
+      db: null,
+      filterPerson: ''
+    };
+
+    const pad2 = n => (n < 10 ? '0'+n : ''+n);
+    const ymd = (d) => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+    const parseYMD = (str) => { const [y,m,d] = str.split('-').map(Number); return new Date(y, m-1, d); };
+    const inRange = (d) => allowedYears.includes(d.getFullYear());
+
+    function clamp(date){ let y = date.getFullYear(); if (y < allowedYears[0]) return new Date(allowedYears[0], 0, 1); if (y > allowedYears[allowedYears.length-1]) return new Date(allowedYears[allowedYears.length-1], 11, 1); return date; }
+
+    const $ = id => document.getElementById(id);
+    const grid = $('grid'); const weekHeader = $('weekHeader'); const title = $('title');
+    const prevBtn = $('prevBtn'); const nextBtn = $('nextBtn'); const todayBtn = $('todayBtn');
+    const monthSelect = $('monthSelect'); const yearSelect = $('yearSelect');
+    const personFilter = $('personFilter'); const exportBtn = $('exportBtn'); const fabAdd = $('fabAdd');
+
+    const eventDialog = $('eventDialog'); const eventForm = $('eventForm'); const dlgDate = $('dlgDate'); const dlgTitle = $('dlgTitle');
+    const dateInput = $('dateInput'); const titleInput = $('titleInput'); const startInput = $('startInput'); const endInput = $('endInput');
+    const noteInput = $('noteInput'); const cancelBtn = $('cancelBtn'); const saveBtn = $('saveBtn'); const eventIdInput = $('eventId');
+    const prioritySelect = $('prioritySelect'); const peopleContainer = $('peopleContainer');
+
+    const dayDialog = $('dayDialog'); const dayDate = $('dayDate'); const dayList = $('dayList'); const dayCloseBtn = $('dayCloseBtn'); const dayAddBtn = $('dayAddBtn');
+
+    const exportDialog = $('exportDialog'); const exportContent = $('exportContent'); const exportWeekBtn = $('exportWeekBtn'); const exportMonthBtn = $('exportMonthBtn'); const exportCloseBtn = $('exportCloseBtn'); const copyExportBtn = $('copyExportBtn');
+
+    const toast = $('toast'); const toastIcon = $('toastIcon'); const toastMsg = $('toastMsg');
+
+    function showToast(msg, type = 'success'){
+      toast.className = 'toast show ' + type;
+      toastIcon.textContent = type === 'success' ? '✓' : '✕';
+      toastMsg.textContent = msg;
+      setTimeout(() => toast.classList.remove('show'), 2600);
+    }
+
+    function buildWeekHeader(){ weekHeader.innerHTML = weekDays.map(w => `<div class="wd">${w}</div>`).join(''); }
+
+    function buildSelects(){
+      monthSelect.innerHTML = monthNames.map((m, i) => `<option value="${i}">${m}</option>`).join('');
+      yearSelect.innerHTML = allowedYears.map(y => `<option value="${y}">${y}</option>`).join('');
+      monthSelect.addEventListener('change', () => setMonth(state.year, Number(monthSelect.value)));
+      yearSelect.addEventListener('change', () => setMonth(Number(yearSelect.value), state.month));
+    }
+
+    function buildPersonFilter(){
+      personFilter.innerHTML = '<option value="">Todas as pessoas</option>' + PEOPLE.map(p => `<option value="${p}">${p}</option>`).join('');
+      personFilter.addEventListener('change', () => { state.filterPerson = personFilter.value; renderCalendar(); if (dayDialog.open && state.selectedDate) openDayDialog(state.selectedDate); });
+    }
+
+    function buildPeople(){
+      peopleContainer.innerHTML = '';
+      PEOPLE.forEach((name, idx) => {
+        const id = 'p_'+idx;
+        const wrap = document.createElement('div'); wrap.className = 'person';
+        const input = document.createElement('input'); input.type = 'checkbox'; input.id = id; input.value = name;
+        const label = document.createElement('label'); label.setAttribute('for', id); label.textContent = name;
+        wrap.appendChild(input); wrap.appendChild(label); peopleContainer.appendChild(wrap);
+      });
+    }
+
+    function setMonth(y, m){
+      if (!allowedYears.includes(y)) return; state.year = y; state.month = m; title.textContent = `${monthNames[m]} ${y}`;
+      const isFirst = (y === allowedYears[0] && m === 0); const isLast = (y === allowedYears[allowedYears.length-1] && m === 11);
+      prevBtn.disabled = isFirst; nextBtn.disabled = isLast; monthSelect.value = m; yearSelect.value = y; renderCalendar(); listenMonth();
+    }
+
+    prevBtn.onclick = () => { let y = state.year, m = state.month - 1; if (m < 0){ y -= 1; m = 11; } setMonth(y, m); };
+    nextBtn.onclick = () => { let y = state.year, m = state.month + 1; if (m > 11){ y += 1; m = 0; } setMonth(y, m); };
+    todayBtn.onclick = () => { const t = clamp(new Date()); setMonth(t.getFullYear(), t.getMonth()); };
+
+    fabAdd.onclick = () => openEventDialog(new Date()); cancelBtn.onclick = () => eventDialog.close(); saveBtn.onclick = onSave;
+    dayCloseBtn.onclick = () => dayDialog.close(); dayAddBtn.onclick = () => { dayDialog.close(); openEventDialog(state.selectedDate || new Date()); };
+
+    exportBtn.onclick = () => openExportDialog(); exportCloseBtn.onclick = () => exportDialog.close();
+    exportWeekBtn.onclick = () => { exportWeekBtn.classList.add('active'); exportMonthBtn.classList.remove('active'); renderExport('week'); };
+    exportMonthBtn.onclick = () => { exportMonthBtn.classList.add('active'); exportWeekBtn.classList.remove('active'); renderExport('month'); };
+    copyExportBtn.onclick = () => { navigator.clipboard.writeText(exportContent.textContent).then(() => showToast('Texto copiado!', 'success')); };
+
+    function filterEvents(events){ if (!state.filterPerson) return events; return events.filter(ev => (ev.people || []).includes(state.filterPerson)); }
+
+    function dayPriority(events){ if (events.some(e=>e.priority==='urgent')) return 'urgent'; if (events.some(e=>e.priority==='medium')) return 'medium'; if (events.length>0) return 'low'; return null; }
+
+    function renderCalendar(){
+      const first = new Date(state.year, state.month, 1); const last  = new Date(state.year, state.month + 1, 0);
+      const startDay = first.getDay(); const daysInMonth = last.getDate(); const prevLast = new Date(state.year, state.month, 0).getDate();
+      const cells = [];
+      for (let i=0; i<startDay; i++){ const d = new Date(state.year, state.month-1, prevLast - startDay + i + 1); cells.push(renderDay(d, true)); }
+      for (let d=1; d<=daysInMonth; d++) cells.push(renderDay(new Date(state.year, state.month, d), false));
+      while (cells.length % 7 !== 0){ const d = new Date(state.year, state.month+1, cells.length - (startDay + daysInMonth) + 1); cells.push(renderDay(d, true)); }
+      grid.innerHTML = ''; cells.forEach(el => grid.appendChild(el));
+    }
+
+    function renderDay(date, isOther){
+      const cell = document.createElement('div'); cell.className = 'day' + (isOther ? ' other' : '');
+      const key = ymd(date); const allEventsDay = state.eventsByDate[key] || []; const events = filterEvents(allEventsDay); const prio = dayPriority(events);
+      if (state.filterPerson && events.length === 0) cell.classList.add('hidden');
+      if (events.length > 0){ const badge = document.createElement('div'); badge.className = 'count-badge'; badge.textContent = events.length; cell.appendChild(badge); }
+      const num = document.createElement('div'); num.className = 'num'; num.textContent = date.getDate(); cell.appendChild(num);
+      const today = new Date(); if(ymd(today) === ymd(date)) cell.classList.add('today');
+      if (prio){ cell.classList.add('has-event'); cell.dataset.priority = prio; }
+      if (!isOther){ cell.tabIndex = 0; cell.onclick = () => openDayDialog(date); cell.onkeydown = (e)=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); openDayDialog(date);} }; }
+      return cell;
+    }
+
+    function openEventDialog(date, eventData = null){
+      const d = clamp(date);
+      if (eventData){
+        dlgTitle.textContent = 'Editar compromisso'; eventIdInput.value = eventData.id; titleInput.value = eventData.title || '';
+        dateInput.value = eventData.date || ymd(d); startInput.value = eventData.startTime || ''; endInput.value = eventData.endTime || '';
+        noteInput.value = eventData.notes || ''; prioritySelect.value = eventData.priority || 'medium';
+        [...peopleContainer.querySelectorAll('input[type="checkbox"]')].forEach(cb => { cb.checked = (eventData.people || []).includes(cb.value); });
+      } else {
+        dlgTitle.textContent = 'Novo compromisso'; eventIdInput.value = ''; dateInput.value = ymd(d); titleInput.value = '';
+        startInput.value = ''; endInput.value = ''; noteInput.value = ''; prioritySelect.value = 'medium';
+        [...peopleContainer.querySelectorAll('input[type="checkbox"]')].forEach(cb=> cb.checked = false);
+      }
+      dlgDate.textContent = parseYMD(dateInput.value).toLocaleDateString('pt-BR', {weekday:'long', day:'2-digit', month:'long', year:'numeric'});
+      eventDialog.showModal(); titleInput.focus();
+    }
+
+    function openDayDialog(date){
+      state.selectedDate = date; dayDate.textContent = date.toLocaleDateString('pt-BR',{weekday:'long', day:'2-digit', month:'long', year:'numeric'});
+      const key = ymd(date); const all = state.eventsByDate[key] || []; const list = filterEvents(all); dayList.innerHTML = '';
+      if (list.length === 0){ dayList.innerHTML = '<div style="text-align:center; color:var(--muted); padding:40px 20px;">Sem compromissos neste dia.</div>'; }
+      else {
+        list.sort((a,b)=> (a.startTime||'') < (b.startTime||'') ? -1 : 1);
+        list.forEach(ev => {
+          const card = document.createElement('div'); card.className='event';
+          const info = document.createElement('div'); info.className='event-info';
+          const evTitle = document.createElement('div'); evTitle.className='event-title'; evTitle.textContent = ev.title;
+          const meta = document.createElement('div'); meta.className='event-meta'; const when = [ev.startTime||'', ev.endTime?`— ${ev.endTime}`:''].join(' '); meta.textContent = (when.trim()||'Dia todo');
+          const pills = document.createElement('div'); pills.className='tags'; const p = document.createElement('span'); p.className = 'pill '+(ev.priority||'low'); p.textContent = (ev.priority==='urgent'?'Urgente':ev.priority==='medium'?'Intermediária':'Normal'); pills.appendChild(p);
+          (ev.people||[]).forEach(name=>{ const tag=document.createElement('span'); tag.className='tag'; tag.textContent=name; pills.appendChild(tag); });
+          info.appendChild(evTitle); info.appendChild(meta); info.appendChild(pills);
+          const actions = document.createElement('div'); actions.className = 'event-actions';
+          const editBtn = document.createElement('button'); editBtn.className = 'btn btn-edit'; editBtn.innerHTML = '✎ Editar'; editBtn.onclick = () => { dayDialog.close(); openEventDialog(date, ev); };
+          const delBtn = document.createElement('button'); delBtn.className = 'btn btn-del'; delBtn.innerHTML = '🗑 Excluir'; delBtn.onclick = async () => { if (!state.db) return; if (confirm(`Excluir "${ev.title}"?`)){ try{ await state.db.collection('events').doc(ev.id).delete(); showToast('Compromisso excluído', 'danger'); }catch(err){ alert('Erro: '+ err.message); } } };
+          actions.appendChild(editBtn); actions.appendChild(delBtn);
+          card.appendChild(info); card.appendChild(actions); dayList.appendChild(card);
+        });
+      }
+      dayDialog.showModal();
+    }
+
+    async function onSave(){
+      if (!eventForm.reportValidity()) return; if (!state.db){ alert('Firebase não inicializado.'); return; }
+      const dataStr = dateInput.value; const d = parseYMD(dataStr); if (!inRange(d)){ alert('Use datas entre 2025-2027.'); return; }
+      const people = [...peopleContainer.querySelectorAll('input:checked')].map(i=>i.value);
+      const payload = { title: titleInput.value.trim(), date: dataStr, startTime: startInput.value || null, endTime: endInput.value || null, notes: noteInput.value.trim() || null, priority: prioritySelect.value, people, updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
+      const eventId = eventIdInput.value;
+      try{
+        if (eventId){ await state.db.collection('events').doc(eventId).update(payload); showToast('Compromisso atualizado', 'success'); }
+        else { payload.createdAt = firebase.firestore.FieldValue.serverTimestamp(); await state.db.collection('events').add(payload); showToast('Compromisso criado', 'success'); }
+        eventDialog.close();
+      }catch(err){ alert('Erro ao salvar: '+ err.message); }
+    }
+
+    async function initFirebase(){
+      const firebaseConfig = { apiKey: "AIzaSyD8o48fskAOgwFMWNzB0pytN8uOBbkLMgQ", authDomain: "calendario-388f6.firebaseapp.com", projectId: "calendario-388f6", storageBucket: "calendario-388f6.firebasestorage.app", messagingSenderId: "615408588869", appId: "1:615408588869:web:77f17c6fb0c07f70322b2c" };
+      firebase.initializeApp(firebaseConfig);
+      try{ await firebase.firestore().enablePersistence({synchronizeTabs:true}); }catch(err){ console.log('Persistência offline indisponível.'); }
+      state.db = firebase.firestore();
+    }
+
+    function listenMonth(){
+      if (!state.db) return; if (state.monthUnsub) { state.monthUnsub(); state.monthUnsub = null; }
+      const start = ymd(new Date(state.year, state.month, 1)); const end = ymd(new Date(state.year, state.month+1, 0));
+      const q = state.db.collection('events').orderBy('date').where('date', '>=', start).where('date', '<=', end);
+      state.monthUnsub = q.onSnapshot((snap)=>{
+        const map = {}; snap.forEach(doc=>{ const ev = doc.data(); ev.id = doc.id; if (!map[ev.date]) map[ev.date] = []; map[ev.date].push(ev); });
+        state.eventsByDate = map; renderCalendar(); if (state.selectedDate && dayDialog.open) openDayDialog(state.selectedDate);
+      }, (err)=> console.error(err));
+    }
+
+    /* ===== Export (texto limpo) ===== */
+    function openExportDialog(){ exportWeekBtn.classList.add('active'); exportMonthBtn.classList.remove('active'); renderExport('week'); exportDialog.showModal(); }
+
+    function renderExport(kind){
+      const lines = [];
+      const monthName = monthNames[state.month];
+      const header = kind === 'week' ? `Compromissos — Semana (visível: ${monthName} ${state.year})` : `Compromissos — ${monthName} ${state.year}`;
+      lines.push(header);
+      if (state.filterPerson) lines.push(`Pessoa: ${state.filterPerson}`);
+      lines.push('');
+
+      if (kind === 'week'){
+        const range = getVisibleWeekRange();
+        lines.push(`Período: ${fmtPt(range.start)} a ${fmtPt(range.end)}`);
+        lines.push('');
+        const byDay = iterDays(range.start, range.end);
+        byDay.forEach(d => pushDayLines(lines, d));
+      } else {
+        const first = new Date(state.year, state.month, 1); const last = new Date(state.year, state.month + 1, 0);
+        const weeks = splitMonthInWeeks(first, last);
+        weeks.forEach((w, i) => {
+          lines.push(`Semana ${i+1} — ${fmtPt(w.start)} a ${fmtPt(w.end)}`);
+          const byDay = iterDays(w.start, w.end);
+          let count = 0; byDay.forEach(d => { count += pushDayLines(lines, d); });
+          if (count === 0) lines.push('  (sem compromissos)');
+          lines.push('');
+        });
+      }
+
+      exportContent.textContent = lines.join('\n');
+    }
+
+    function pushDayLines(lines, date){
+      const key = ymd(date); const list = filterEvents(state.eventsByDate[key] || []);
+      if (!list.length) return 0;
+      const dateLabel = date.toLocaleDateString('pt-BR', {weekday:'long', day:'2-digit', month:'2-digit'});
+      lines.push(`${dateLabel}`);
+      list.sort((a,b)=> (a.startTime||'') < (b.startTime||'') ? -1 : 1).forEach(ev => {
+        const time = (ev.startTime||'') + (ev.endTime?` — ${ev.endTime}`:'');
+        const ppl = (ev.people||[]).join(', ');
+        const pr = ev.priority==='urgent'?'URGENTE':ev.priority==='medium'?'INTERMED.':'NORMAL';
+        lines.push(`  • ${ev.title} ${time?`(${time})`:''} — ${pr}${ppl?` — ${ppl}`:''}`);
+      });
+      lines.push('');
+      return list.length;
+    }
+
+    function getVisibleWeekRange(){
+      const today = new Date();
+      const base = (today.getFullYear()===state.year && today.getMonth()===state.month) ? today : new Date(state.year, state.month, 1);
+      const start = startOfWeek(base); const end = endOfWeek(base);
+      const monthStart = new Date(state.year, state.month, 1); const monthEnd = new Date(state.year, state.month+1, 0);
+      return { start: maxDate(start, monthStart), end: minDate(end, monthEnd) };
+    }
+
+    function splitMonthInWeeks(first, last){
+      const weeks = []; let cur = startOfWeek(first);
+      while (cur <= last){ const wStart = new Date(cur); const wEnd = minDate(endOfWeek(cur), last); weeks.push({start:wStart, end:wEnd}); cur = addDays(wEnd, 1); }
+      return weeks;
+    }
+
+    function iterDays(start, end){ const out = []; let d = new Date(start); while (d <= end){ out.push(new Date(d)); d = addDays(d, 1);} return out; }
+    function addDays(d, n){ const x = new Date(d); x.setDate(x.getDate()+n); return x; }
+    function startOfWeek(d){ const x = new Date(d); const day = x.getDay(); x.setDate(x.getDate()-day); return new Date(x.getFullYear(), x.getMonth(), x.getDate()); }
+    function endOfWeek(d){ const x = startOfWeek(d); x.setDate(x.getDate()+6); return x; }
+    function minDate(a,b){ return a<b ? a : b; } function maxDate(a,b){ return a>b ? a : b; }
+    function fmtPt(d){ return d.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'}); }
+
+    (async function(){
+      buildWeekHeader(); buildSelects(); buildPersonFilter(); buildPeople();
+      const today = clamp(new Date()); state.year = today.getFullYear(); state.month = today.getMonth();
+      await initFirebase(); setMonth(state.year, state.month);
+    })();
+
+  })();
+  </script>
+
+  <!-- Regras Firestore (dev) — restrinja depois com Auth
+  rules_version = '2';
+  service cloud.firestore {
+    match /databases/{database}/documents {
+      match /events/{doc} {
+        allow read, write: if true; // Somente para testes
+      }
+    }
+  }
+  -->
+</body>
+</html>
